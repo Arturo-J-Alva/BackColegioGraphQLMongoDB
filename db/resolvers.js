@@ -60,6 +60,11 @@ const resolvers = {
             ValidarToken(ctx)
             const modulos = await Modulo.find({})
             return modulos
+        },
+        obtenerLecciones: async (_, { }, ctx) => {
+            ValidarToken(ctx)
+            const lecciones = await Leccion.find({})
+            return lecciones
         }
     },
     Mutation: {
