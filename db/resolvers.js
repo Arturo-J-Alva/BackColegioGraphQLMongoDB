@@ -3,6 +3,9 @@ const Profesor = require('../models/Profesor')
 const Tutor = require('../models/Tutor')
 const Grupo = require('../models/Grupo')
 const Alumno = require('../models/Alumno')
+const Curso = require('../models/Curso')
+const Modulo = require('../models/Modulo')
+const Leccion = require('../models/Leccion')
 
 var bcryptjs = require('bcryptjs')
 const jwt = require('jsonwebtoken')
@@ -40,13 +43,23 @@ const resolvers = {
         },
         obtenerGrupos: async (_, { }, ctx) => {
             ValidarToken(ctx)
-            const grupos = await Grupo.find({}).populate('tutor').populate('nivel')
+            const grupos = await Grupo.find({})
             return grupos
         },
         obtenerAlumnos: async (_, { }, ctx) => {
             ValidarToken(ctx)
-            const alunmnos = await Alumno.find({}).populate('grupo')
+            const alunmnos = await Alumno.find({})
             return alunmnos
+        },
+        obtenerCursos: async (_, { }, ctx) => {
+            ValidarToken(ctx)
+            const cursos = await Curso.find({})
+            return cursos
+        },
+        obtenerModulos: async (_, { }, ctx) => {
+            ValidarToken(ctx)
+            const modulos = await Modulo.find({})
+            return modulos
         }
     },
     Mutation: {
@@ -82,9 +95,21 @@ const resolvers = {
                 const verifNombre = await Nivel.findOne({ nombre })
                 if (verifNombre && !(verifNombre._id.toString() === id)) throw new Error('El nombre ya está siendo usado')
             }
-
             //Guardando en la DB
             nivel = await Nivel.findOneAndUpdate({ _id: id }, input, { new: true })
+            //actualizando Nivel de cada Grupo
+            const nivelJSON = nivel.toJSON()
+            await Grupo.updateMany({ "nivel._id": nivel._id }, {
+                $set: {
+                    nivel: nivelJSON
+                }
+            })
+            //actualizando nivel de alumnos
+            await Alumno.updateMany({ "grupo.nivel._id": nivel._id }, {
+                $set: {
+                    "grupo.nivel": nivelJSON
+                }
+            })
             return nivel
         },
         eliminarNivel: async (_, { id }, ctx) => {
@@ -106,7 +131,7 @@ const resolvers = {
                 throw new Error('El email ya está registrado')
             }
             const existeTutorndoc = await Tutor.findOne({ ndoc })
-            console.log('existeTutorndoc:',existeTutorndoc)
+            console.log('existeTutorndoc:', existeTutorndoc)
             if (existeTutorndoc) {
                 throw new Error('El ndoc ya está registrado')
             }
@@ -115,9 +140,9 @@ const resolvers = {
             try {
                 //Guardarlo en la BD
                 const tutor = new Tutor(input)
-                console.log('nuevo tutor:',tutor)
+                console.log('nuevo tutor:', tutor)
                 const res = await tutor.save()
-                console.log('res:',res)
+                console.log('res:', res)
                 return tutor
             } catch (e) {
                 console.log(e)
@@ -128,7 +153,7 @@ const resolvers = {
             const { email, password, ndoc } = input
             //verificar si ese tutor existe
             let tutor = await Tutor.findById(id)
-            if (!tutor) throw new Error('El nivel no existe')
+            if (!tutor) throw new Error('El tutor no existe')
             //verificando si se repite el ndoc o email con otro tutor
             if (ndoc) {
                 const verifndoc = await Tutor.findOne({ ndoc })
@@ -138,13 +163,32 @@ const resolvers = {
                 const verifEmail = await Tutor.findOne({ email })
                 if (verifEmail && !(verifEmail._id.toString() === id)) throw new Error('El email ya está siendo usado')
             }
-            //hasheado password
+            //hasheando password
             if (password) {
                 const salt = await bcryptjs.genSalt(10)
                 input.password = await bcryptjs.hash(password, salt)
             }
             //Guardando en la DB
             tutor = await Tutor.findOneAndUpdate({ _id: id }, input, { new: true })
+            console.log('tutor:', tutor)
+            //actualizando Tutor de Grupo
+            const tutorJSON = tutor.toJSON()
+
+            const grupo = await Grupo.findOneAndUpdate({ "tutor._id": tutor._id }, {
+                $set: {
+                    tutor: tutorJSON
+                }
+            }, { new: true })
+            if (grupo) {
+                //actualizando Grupo de Alumno
+                const grupoJSON = grupo.toJSON()
+
+                await Alumno.updateMany({ "grupo._id": grupo._id }, {
+                    $set: {
+                        grupo: grupoJSON
+                    }
+                })
+            }
             return tutor
         },
         eliminarTutor: async (_, { id }, ctx) => {
@@ -204,7 +248,7 @@ const resolvers = {
             const { email, password, ndoc } = input
             //verificar si ese profesor existe
             let profesor = await Profesor.findById(id)
-            if (!profesor) throw new Error('El nivel no existe')
+            if (!profesor) throw new Error('El profesor no existe')
             //verificando si se repite el ndoc o email con otro profesor
             if (ndoc) {
                 const verifndoc = await Profesor.findOne({ ndoc })
@@ -214,7 +258,7 @@ const resolvers = {
                 const verifEmail = await Profesor.findOne({ email })
                 if (verifEmail && !(verifEmail._id.toString() === id)) throw new Error('El email ya está siendo usado')
             }
-            //hasheado password
+            //hasheando password
             if (password) {
                 const salt = await bcryptjs.genSalt(10)
                 input.password = await bcryptjs.hash(password, salt)
@@ -253,21 +297,29 @@ const resolvers = {
         },
         nuevoGrupo: async (_, { input }, ctx) => {
             ValidarToken(ctx)
-            const { nombre, tutor } = input
+            const { nombre, tutor, nivel } = input
             //Revisar si el nombre de grupo ya está registrado
             const existeNombreGrupo = await Grupo.findOne({ nombre })
             if (existeNombreGrupo) throw new Error('El nombre de grupo ya está siendo usado')
             //Verificar si el tutor existe
-            const existeTutor = await Tutor.findOne({ _id:tutor })
+            const existeNivel = await Nivel.findOne({ _id: nivel })
+            if (!existeNivel) throw new Error('El nivel seleccionado no existe')
+            //Verificar si el tutor existe
+            const existeTutor = await Tutor.findOne({ _id: tutor })
             if (!existeTutor) throw new Error('El tutor seleccionado no existe')
-            //Revisar si el tutor de grupo ya está registrado
-            const existeTutorGrupo = await Grupo.findOne({ tutor })
+            //Revisar si el tutor de grupo ya está registrado(por mientras lo haré así:)
+            console.log('existeTutor:', existeTutor)
+            const existeTutorGrupo = await Grupo.findOne({ tutor: existeTutor })
+            console.log('existeTutorGrupo:', existeTutorGrupo)
             if (existeTutorGrupo) throw new Error('El tutor seleccionado ya tiene grupo a cargo')
+            //Agregando nivel y tutor al input
+            input.nivel = existeNivel
+            input.tutor = existeTutor
             try {
                 //Guardarlo en la BD
                 let grupo = new Grupo(input) //Creando nueva instancia del modelo grupo
+                //grupo = await Grupo.findById(grupo.id).populate('tutor').populate('nivel')
                 await grupo.save()
-                grupo = await Grupo.findById(grupo.id).populate('tutor').populate('nivel')
                 return grupo
             } catch (e) {
                 console.log(e)
@@ -276,7 +328,7 @@ const resolvers = {
         },
         actualizarGrupo: async (_, { id, input }, ctx) => {
             ValidarToken(ctx)
-            const { nombre,tutor } = input
+            const { nombre, tutor, nivel } = input
             //verificar si ese grupo existe
             let grupo = await Grupo.findById(id)
             if (!grupo) throw new Error('El grupo no existe')
@@ -286,13 +338,29 @@ const resolvers = {
                 if (verifNombre && !(verifNombre._id.toString() === id)) throw new Error('El nombre ya está siendo usado')
             }
             if (tutor) {
-                const existeTutor = await Tutor.findOne({_id:tutor})
-                if(!existeTutor) throw new Error('El tutor seleccionado no existe')
-                const verifTutor = await Grupo.findOne({ tutor })
+                const existeTutor = await Tutor.findOne({ _id: tutor })
+                if (!existeTutor) throw new Error('El tutor seleccionado no existe')
+                const verifTutor = await Grupo.findOne({ tutor: existeTutor })
                 if (verifTutor && !(verifTutor._id.toString() === id)) throw new Error('El tutor seleccionado ya tiene otro grupo a cargo')
+                //Agregando tutor al input
+                input.tutor = existeTutor
+            }
+            if (nivel) {
+                const existeNivel = await Nivel.findById(nivel)
+                if (!existeNivel) throw new Error('El nivel seleccionado no existe')
+                //Agregando nivel al input
+                input.nivel = existeNivel
             }
             //Guardando en la DB
-            grupo = await Grupo.findOneAndUpdate({ _id: id }, input, { new: true }).populate('tutor').populate('nivel')
+            grupo = await Grupo.findOneAndUpdate({ _id: id }, input, { new: true })
+            //actualizando Grupo de Alumno
+            const grupoJSON = grupo.toJSON()
+
+            await Alumno.updateMany({ "grupo._id": grupo._id }, {
+                $set: {
+                    grupo: grupoJSON
+                }
+            })
             return grupo
         },
         eliminarGrupo: async (_, { id }, ctx) => {
@@ -306,25 +374,208 @@ const resolvers = {
         },
         nuevoAlumno: async (_, { input }, ctx) => {
             ValidarToken(ctx)
-            const { password, ndoc } = input
+            const { password, ndoc, grupo } = input
             //Revisar si el Alumno ya está registrado
             const existeAlumnondoc = await Alumno.findOne({ ndoc })
             if (existeAlumnondoc) throw new Error('El documento de identificacion ya está registrado')
-
+            //Revisar si grupo existe
+            const grupoExiste = await Grupo.findById(grupo)
+            if (!grupoExiste) throw new Error('El grupo seleccionado no existe')
+            //insertando datos del grupo al input
+            input.grupo = grupoExiste
+            //encriptando password
             const salt = await bcryptjs.genSalt(10)
             input.password = await bcryptjs.hash(password, salt)
+
             try {
                 //Guardarlo en la BD
                 let alumno = new Alumno(input)
                 await alumno.save()
-                alumno = await Alumno.findById(alumno._id).populate('grupo')
-                alumno.grupo = await Grupo.findById(alumno.grupo._id).populate('nivel').populate('tutor')
                 return alumno
             } catch (e) {
                 console.log(e)
             }
         },
-
+        actualizarAlumno: async (_, { id, input }, ctx) => {
+            ValidarToken(ctx)
+            const { email, password, ndoc, grupo } = input
+            //verificar si ese alumno existe
+            let alumno = await Alumno.findById(id)
+            if (!alumno) throw new Error('El alumno no existe')
+            if (grupo) {
+                //verificar si el grupo existe
+                const grupoExiste = await Grupo.findById(grupo)
+                if (!grupoExiste) throw new Error('El grupo seleccionado no existe')
+                //inyectando grupo a input:
+                input.grupo = grupoExiste
+            }
+            //verificando si se repite el ndoc o email con otro alumno
+            if (ndoc) {
+                const verifndoc = await Alumno.findOne({ ndoc })
+                if (verifndoc && !(verifndoc._id.toString() === id)) throw new Error('El doc ya está siendo usado')
+            }
+            if (email) {
+                const verifEmail = await Alumno.findOne({ email })
+                if (verifEmail && !(verifEmail._id.toString() === id)) throw new Error('El email ya está siendo usado')
+            }
+            //hasheando password
+            if (password) {
+                const salt = await bcryptjs.genSalt(10)
+                input.password = await bcryptjs.hash(password, salt)
+            }
+            //Guardando en la DB
+            alumno = await Alumno.findOneAndUpdate({ _id: id }, input, { new: true })
+            return alumno
+        },
+        nuevoCurso: async (_, { input }, ctx) => {
+            ValidarToken(ctx)
+            const { nombre, nivel } = input
+            //Revisar si el nombre de curso ya está registrado
+            const existeNombreCurso = await Curso.findOne({ nombre })
+            if (existeNombreCurso) throw new Error('El nombre del curso ya está siendo usado')
+            //Verificar si el nivel existe
+            const existeNivel = await Nivel.findOne({ _id: nivel })
+            if (!existeNivel) throw new Error('El nivel seleccionado no existe')
+            //Verificar si los profesores existen
+            let profesores = []
+            for await (const idprof of input.profesores) { //si se usa map o forEach no se podrá hacerse asincronamente, ésta función sí se puede
+                const profesor = await Profesor.findById(idprof)
+                if (!profesor) throw new Error('No existe al menos un profesor seleccionado')
+                profesores = [...profesores, profesor]
+            }
+            //Agregando nivel y profesores al input
+            input.profesores = profesores
+            input.nivel = existeNivel
+            try {
+                //Guardarlo en la BD
+                const curso = new Curso(input)
+                await curso.save()
+                return curso
+            } catch (e) {
+                console.log(e)
+                throw new Error('Error del servidor')
+            }
+        },
+        actualizarCurso: async (_, { id, input }, ctx) => {
+            ValidarToken(ctx)
+            const { nivel, nombre } = input
+            //Verificar si el curso existe 
+            const cursoExiste = await Curso.findById(id)
+            if (!cursoExiste) throw new Error('El curso no existe')
+            //Verificar nombre curso único
+            if (nombre) {
+                const verifNombre = await Curso.findOne({ nombre })
+                if (verifNombre && !(verifNombre._id.toString() === id)) throw new Error('No puede haber dos cursos con el mismo nombre')
+            }
+            //Verificar si existe el nivel
+            if (nivel) {
+                const nivelExiste = await Nivel.findById(nivel)
+                if (!nivelExiste) throw new Error('El nivel no existe')
+                //Agregando nivel al input
+                input.nivel = nivelExiste
+            }
+            let actualizarProfesores = []
+            if (input.profesores) {
+                if (input.profesores.length > 0) {
+                    for await (const idprof of input.profesores) { //si se usa map o forEach no se podrá hacerse asincronamente, ésta función sí se puede
+                        const profesor = await Profesor.findById(idprof)
+                        if (!profesor) throw new Error('No existe al menos un profesor seleccionado')
+                        actualizarProfesores = [...actualizarProfesores, profesor]
+                    }
+                    //Agregando nuevos profesores al input
+                    input.profesores = actualizarProfesores
+                } else delete input.profesores //para ignorar profesores = []
+            }
+            //Guardando en la DB
+            curso = await Curso.findOneAndUpdate({ _id: id }, input, { new: true })
+            return curso
+        },
+        eliminarCurso: async (_, { id }, ctx) => {
+            ValidarToken(ctx)
+            //Verificar si el curso existe 
+            const cursoExiste = await Curso.findById(id)
+            if (!cursoExiste) throw new Error('El curso no existe')
+            //verificando si el Curso no tiene contenido (Módulos)
+            const modulos = await Modulo.find({ curso: id })
+            if (modulos.length > 0) throw new Error('Solo se permite elimimar cursos sin contenido')
+            //Guardando cambios en la DB
+            await Curso.deleteOne({ _id: id })
+            return "Curso eliminado"
+        },
+        nuevoModulo: async (_, { input }, ctx) => {
+            ValidarToken(ctx)
+            const { curso } = input
+            //Verificando si el curso existe
+            const cursoExiste = await Curso.findById(curso)
+            if (!cursoExiste) throw new Error('El curso no existe')
+            //Guardando en la DB
+            const modulo = new Modulo(input)
+            await modulo.save()
+            return modulo
+        },
+        actualizarModulo: async (_, { id, input }, ctx) => {
+            ValidarToken(ctx)
+            const { curso } = input
+            //Verificando si el modulo existe
+            let modulo = await Modulo.findById(id)
+            if (!modulo) throw new Error('El módulo no existe')
+            if (curso) {
+                //Verificando si el curso existe
+                const cursoExiste = await Curso.findById(curso)
+                if (!cursoExiste) throw new Error('El curso no existe')
+            }
+            //Guardando en la DB
+            modulo = await Modulo.findOneAndUpdate({ _id: id }, input, { new: true })
+            return modulo
+        },
+        eliminarModulo: async (_, { id }, ctx) => {
+            ValidarToken(ctx)
+            //Verificando si el modulo existe
+            let modulo = await Modulo.findById(id)
+            if (!modulo) throw new Error('El módulo no existe')
+            //verificando si el Módulo no tiene contenido (lecciones)
+            const lecciones = await Leccion.find({ modulo: id })
+            if (lecciones.length > 0) throw new Error('Solo se permite elimimar módulos sin contenido')
+            //Guardando cambios en la DB
+            await Modulo.deleteOne({ _id: id })
+            return "Módulo eliminado"
+        },
+        nuevoLeccion: async (_, { input }, ctx) => {
+            ValidarToken(ctx)
+            const { modulo } = input
+            //Verificando si el curso existe
+            const moduloExiste = await Modulo.findById(modulo)
+            if (!moduloExiste) throw new Error('El modulo no existe')
+            //Guardando en la DB
+            const leccion = new Leccion(input)
+            await leccion.save()
+            return leccion
+        },
+        actualizarLeccion: async (_, { id, input }, ctx) => {
+            ValidarToken(ctx)
+            console.log(input)
+            const { modulo } = input
+            //Verificando si la leccion existe
+            let leccion = await Leccion.findById(id)
+            if (!leccion) throw new Error('La lección no existe')
+            //Verificando si el modulo existe
+            if (modulo) {
+                const moduloExiste = await Modulo.findById(modulo)
+                if (!moduloExiste) throw new Error('El modulo no existe')
+            }
+            //Guardando en la DB
+            leccion = await Leccion.findOneAndUpdate({ _id: id }, input, { new: true })
+            return leccion
+        },
+        eliminarLeccion: async (_, { id }, ctx) => {
+            ValidarToken(ctx)
+            //Verificando si el leccion existe
+            let leccion = await Leccion.findById(id)
+            if (!leccion) throw new Error('La lección no existe')
+            //Guardando cambios en la DB
+            await Leccion.deleteOne({ _id: id })
+            return "Lección eliminada"
+        }
     }
 }
 

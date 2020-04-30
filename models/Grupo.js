@@ -8,9 +8,8 @@ const GrupoSchema = mongoose.Schema({
         unique: true
     },
     nivel: {
-        type: mongoose.Schema.Types.ObjectId,
-        required: true,
-        ref: 'Nivel'
+        type: Object,
+        required: true
     },
     seccion: {
         type: String,
@@ -18,9 +17,8 @@ const GrupoSchema = mongoose.Schema({
         trim: true
     },
     tutor:{
-        type: mongoose.Schema.Types.ObjectId,
-        required: true,
-        ref: 'Tutor'
+        type: Object,
+        required: true
     }
 })
 

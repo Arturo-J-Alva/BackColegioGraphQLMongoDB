@@ -4,8 +4,7 @@ const ModuloSchema = mongoose.Schema({
     nombre: {
         type: String,
         required: true,
-        trim: true,
-        unique: true
+        trim: true
     },
     curso: {
         type: mongoose.Schema.Types.ObjectId,
@@ -18,7 +17,7 @@ const ModuloSchema = mongoose.Schema({
     },
     creado: {
         type: Date,
-        default: Date.now()
+        default: Date.now
     }
 })
 

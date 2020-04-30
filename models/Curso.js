@@ -8,9 +8,8 @@ const CursoSchema = mongoose.Schema({
         unique: true
     },
     nivel: {
-        type: mongoose.Schema.Types.ObjectId,
-        required: true,
-        ref: 'Nivel'
+        type: Object,
+        required: true
     },
     imagen:{
         type: String,
@@ -18,7 +17,11 @@ const CursoSchema = mongoose.Schema({
     },
     creado: {
         type: Date,
-        default: Date.now()
+        default: Date.now
+    },
+    profesores: {
+        type: Array,
+        require:true
     }
 })
 

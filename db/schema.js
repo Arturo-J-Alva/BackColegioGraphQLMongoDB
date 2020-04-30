@@ -53,6 +53,47 @@ const typeDefs = gql`
         tipo: TipoDoc!,
         numero: String!
     }
+    type Curso {
+        id: ID
+        nombre: String
+        nivel: Nivel
+        imagen: String
+        creado: String
+        profesores: [Profesor]
+    }
+    type Modulo {
+        id: ID
+        nombre: String
+        curso: ID
+        imagen: String
+        creado: String
+    }
+    type Leccion {
+        id: ID
+        nombre: String
+        modulo: ID
+        teoria:[Teoria]
+        recursos:[Recurso]
+        tareas:[Tarea]
+        imagen: String
+        creado: String
+    }
+    type Teoria {
+        nombre: String
+        video: String
+        link: String
+        descripcion: String
+    }
+    type Recurso {
+        nombre: String
+        link: String
+        descripcion: String
+    }
+    type Tarea {
+        nombre: String
+        link: String
+        descripcion: String
+    }
 
     enum Sexo{
         MASCULINO
@@ -113,6 +154,41 @@ const typeDefs = gql`
         grupo: ID
         domicilio:String
     }
+    input CursoInput {
+        nombre: String
+        nivel: ID
+        imagen: String
+        profesores: [ID]
+    }
+    input ModuloInput {
+        nombre: String
+        curso: ID
+        imagen: String
+    }
+    input LeccionInput {
+        nombre: String
+        modulo: ID
+        teoria:[TeoriaInput]
+        recursos:[RecursoInput]
+        tareas:[TareaInput]
+        imagen: String
+    }
+    input TeoriaInput {
+        nombre: String
+        video: String
+        link: String
+        descripcion: String
+    }
+    input RecursoInput {
+        nombre: String
+        link: String
+        descripcion: String
+    }
+    input TareaInput {
+        nombre: String
+        link: String
+        descripcion: String
+    }
 
     type Query {
     #Nivel
@@ -129,6 +205,15 @@ const typeDefs = gql`
 
     #Alumno
     obtenerAlumnos:[Alumno]
+
+    #Curso
+    obtenerCursos:[Curso]
+
+    #Módulo
+    obtenerModulos:[Modulo]
+
+    #Leccion
+    obtenerLecciones:[Leccion]
     }
 
     type Mutation {
@@ -156,8 +241,23 @@ const typeDefs = gql`
 
     #Alumno
     nuevoAlumno(input:AlumnoInput!):Alumno
-    }
+    actualizarAlumno(id: ID!, input:AlumnoInput):Alumno
 
+    #Alumno
+    nuevoCurso(input:CursoInput!):Curso
+    actualizarCurso(id:ID!,input:CursoInput):Curso
+    eliminarCurso(id:ID!): String
+
+    #Módulo
+    nuevoModulo(input:ModuloInput!):Modulo
+    actualizarModulo(id:ID!,input:ModuloInput): Modulo
+    eliminarModulo(id:ID!): String
+
+    #Leccion
+    nuevoLeccion(input:LeccionInput!):Leccion
+    actualizarLeccion(id:ID!,input:LeccionInput): Leccion
+    eliminarLeccion(id:ID!): String
+    }
 `
 
 module.exports = typeDefs

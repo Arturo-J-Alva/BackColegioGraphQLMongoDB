@@ -39,13 +39,11 @@ const AlumnoSchema = mongoose.Schema({
     },
     password: {
         type: String,
-        required: true,
-        trim: true
+        required: true
     },
     grupo: {
-        type: mongoose.Schema.Types.ObjectId,
-        required: true,
-        ref: 'Grupo'
+        type: Object,
+        required: true
     },
     domicilio: {
         type: String,
