@@ -3,6 +3,26 @@ const { gql } = require('apollo-server')
 const typeDefs = gql`
     type Token {
         token: String
+        usuario: DatosUsuario
+    }
+    type DatosUsuario {
+        nombre: String
+        apellido: String
+        email: String
+        tipo:String
+        id:ID
+    }
+    type TokenAlumno {
+        token: String
+        usuario: DatosAlumno
+    }
+    type DatosAlumno {
+        nombre: String
+        apellido: String
+        email: String
+        tipo:String
+        id:ID
+        nivel: Nivel
     }
     type Nivel {
         id: ID
@@ -65,6 +85,13 @@ const typeDefs = gql`
         id: ID
         nombre: String
         curso: ID
+        imagen: String
+        creado: String
+    }
+    type ModuloDeCurso {
+        id: ID
+        nombre: String
+        curso: Curso
         imagen: String
         creado: String
     }
@@ -211,9 +238,11 @@ const typeDefs = gql`
 
     #Módulo
     obtenerModulos:[Modulo]
+    obtenerModulosPorCurso(id:ID!):[ModuloDeCurso]
 
     #Leccion
     obtenerLecciones:[Leccion]
+    obtenerLeccionesPorModulo(id:ID!):[Leccion]
     }
 
     type Mutation {
@@ -247,6 +276,7 @@ const typeDefs = gql`
     nuevoCurso(input:CursoInput!):Curso
     actualizarCurso(id:ID!,input:CursoInput):Curso
     eliminarCurso(id:ID!): String
+    autenticarAlumno(input: AutenticarInput!): TokenAlumno
 
     #Módulo
     nuevoModulo(input:ModuloInput!):Modulo

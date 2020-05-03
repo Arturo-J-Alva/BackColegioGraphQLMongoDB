@@ -61,9 +61,19 @@ const resolvers = {
             const modulos = await Modulo.find({})
             return modulos
         },
+        obtenerModulosPorCurso: async (_, {id}, ctx) => {
+            ValidarToken(ctx)
+            const modulos = await Modulo.find({curso:id}).populate('curso')
+            return modulos
+        },
         obtenerLecciones: async (_, { }, ctx) => {
             ValidarToken(ctx)
             const lecciones = await Leccion.find({})
+            return lecciones
+        },
+        obtenerLeccionesPorModulo: async (_, {id}, ctx) => {
+            ValidarToken(ctx)
+            const lecciones = await Leccion.find({modulo:id})
             return lecciones
         }
     },
@@ -136,7 +146,7 @@ const resolvers = {
                 throw new Error('El email ya está registrado')
             }
             const existeTutorndoc = await Tutor.findOne({ ndoc })
-            console.log('existeTutorndoc:', existeTutorndoc)
+            
             if (existeTutorndoc) {
                 throw new Error('El ndoc ya está registrado')
             }
@@ -145,9 +155,7 @@ const resolvers = {
             try {
                 //Guardarlo en la BD
                 const tutor = new Tutor(input)
-                console.log('nuevo tutor:', tutor)
                 const res = await tutor.save()
-                console.log('res:', res)
                 return tutor
             } catch (e) {
                 console.log(e)
@@ -175,7 +183,6 @@ const resolvers = {
             }
             //Guardando en la DB
             tutor = await Tutor.findOneAndUpdate({ _id: id }, input, { new: true })
-            console.log('tutor:', tutor)
             //actualizando Tutor de Grupo
             const tutorJSON = tutor.toJSON()
 
@@ -313,9 +320,9 @@ const resolvers = {
             const existeTutor = await Tutor.findOne({ _id: tutor })
             if (!existeTutor) throw new Error('El tutor seleccionado no existe')
             //Revisar si el tutor de grupo ya está registrado(por mientras lo haré así:)
-            console.log('existeTutor:', existeTutor)
+            
             const existeTutorGrupo = await Grupo.findOne({ tutor: existeTutor })
-            console.log('existeTutorGrupo:', existeTutorGrupo)
+            
             if (existeTutorGrupo) throw new Error('El tutor seleccionado ya tiene grupo a cargo')
             //Agregando nivel y tutor al input
             input.nivel = existeNivel
@@ -431,6 +438,29 @@ const resolvers = {
             //Guardando en la DB
             alumno = await Alumno.findOneAndUpdate({ _id: id }, input, { new: true })
             return alumno
+        },
+        autenticarAlumno: async (_, { input }) => {
+            const { email, password } = input
+            console.log('holioiiiii')
+            //Si el Alumno existe
+            let existeAlumno = await Alumno.findOne({ email })
+            if (!existeAlumno) {
+                throw new Error('No existe alumno con ese email')
+            }
+            //Revisar si el password es correcto
+            const passwordCorrecto = await bcryptjs.compare(password, existeAlumno.password)
+            if (!passwordCorrecto) {
+                throw new Error('El password es incorrecto')
+            }
+            existeAlumno.tipo = 'alumno'
+            let { id , nombre, apellido, tipo, grupo:{nivel} } = existeAlumno
+            nivel = {...nivel, id: nivel._id}
+            const usuario = {id,email:existeAlumno.email,nombre,apellido,tipo, nivel}
+            const Token = {
+                token: CrearToken(existeAlumno, process.env.PALABRA_SECRETA_TOKEN, '24h'),
+                usuario
+            }
+            return Token
         },
         nuevoCurso: async (_, { input }, ctx) => {
             ValidarToken(ctx)
@@ -558,7 +588,6 @@ const resolvers = {
         },
         actualizarLeccion: async (_, { id, input }, ctx) => {
             ValidarToken(ctx)
-            console.log(input)
             const { modulo } = input
             //Verificando si la leccion existe
             let leccion = await Leccion.findById(id)
