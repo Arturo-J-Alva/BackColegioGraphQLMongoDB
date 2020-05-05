@@ -6,6 +6,7 @@ const Alumno = require('../models/Alumno')
 const Curso = require('../models/Curso')
 const Modulo = require('../models/Modulo')
 const Leccion = require('../models/Leccion')
+const axios = require('axios')
 
 var bcryptjs = require('bcryptjs')
 const jwt = require('jsonwebtoken')
@@ -70,6 +71,14 @@ const resolvers = {
             ValidarToken(ctx)
             const lecciones = await Leccion.find({})
             return lecciones
+        },
+        getArticulos : async () => {
+            const res = await axios.get('http://localhost:4000/api/article/5de1a282df8f5732a4c8e66e')
+            console.log(res.data)
+            const {_id,date,title,content,image} = res.data.article
+            const article = {id:_id,date,title,content,image}
+            console.log(article)
+            return  article
         },
         obtenerLeccionesPorModulo: async (_, {id}, ctx) => {
             ValidarToken(ctx)
@@ -441,7 +450,6 @@ const resolvers = {
         },
         autenticarAlumno: async (_, { input }) => {
             const { email, password } = input
-            console.log('holioiiiii')
             //Si el Alumno existe
             let existeAlumno = await Alumno.findOne({ email })
             if (!existeAlumno) {
@@ -609,7 +617,20 @@ const resolvers = {
             //Guardando cambios en la DB
             await Leccion.deleteOne({ _id: id })
             return "Lección eliminada"
-        }
+        },
+        async singleUpload(_, { file }) {
+            const { stream, filename, mimetype, encoding } = await file;
+            console.log(file)
+            // 1. Validate file metadata.
+      
+            // 2. Stream file contents into cloud storage:
+            // https://nodejs.org/api/stream.html
+      
+            // 3. Record the file upload in your DB.
+            // const id = await recordFile( … )
+      
+            return { filename, mimetype, encoding };
+          }
     }
 }
 

@@ -49,6 +49,13 @@ const typeDefs = gql`
         email: String
         password: String
     }
+    type Article {
+        id:ID
+        date: String
+        title: String
+        content: String
+        image: String
+    }
     type Grupo {
         id: ID
         nombre: String
@@ -120,6 +127,11 @@ const typeDefs = gql`
         nombre: String
         link: String
         descripcion: String
+    }
+    type File {
+        filename: String!
+        mimetype: String!
+        encoding: String!
     }
 
     enum Sexo{
@@ -243,6 +255,12 @@ const typeDefs = gql`
     #Leccion
     obtenerLecciones:[Leccion]
     obtenerLeccionesPorModulo(id:ID!):[Leccion]
+
+    #Peticion http get
+    getArticulos: Article
+
+    #upload
+    uploads: [File]
     }
 
     type Mutation {
@@ -287,6 +305,9 @@ const typeDefs = gql`
     nuevoLeccion(input:LeccionInput!):Leccion
     actualizarLeccion(id:ID!,input:LeccionInput): Leccion
     eliminarLeccion(id:ID!): String
+
+    #Upload
+    singleUpload(file: Upload!): File!
     }
 `
 
