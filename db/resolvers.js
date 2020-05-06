@@ -8,6 +8,8 @@ const Modulo = require('../models/Modulo')
 const Leccion = require('../models/Leccion')
 const axios = require('axios')
 
+const { createWriteStream } = require('fs');
+
 var bcryptjs = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 require('dotenv').config({ path: 'variables.env' })
@@ -62,9 +64,9 @@ const resolvers = {
             const modulos = await Modulo.find({})
             return modulos
         },
-        obtenerModulosPorCurso: async (_, {id}, ctx) => {
+        obtenerModulosPorCurso: async (_, { id }, ctx) => {
             ValidarToken(ctx)
-            const modulos = await Modulo.find({curso:id}).populate('curso')
+            const modulos = await Modulo.find({ curso: id }).populate('curso')
             return modulos
         },
         obtenerLecciones: async (_, { }, ctx) => {
@@ -72,17 +74,17 @@ const resolvers = {
             const lecciones = await Leccion.find({})
             return lecciones
         },
-        getArticulos : async () => {
+        getArticulos: async () => {
             const res = await axios.get('http://localhost:4000/api/article/5de1a282df8f5732a4c8e66e')
             console.log(res.data)
-            const {_id,date,title,content,image} = res.data.article
-            const article = {id:_id,date,title,content,image}
+            const { _id, date, title, content, image } = res.data.article
+            const article = { id: _id, date, title, content, image }
             console.log(article)
-            return  article
+            return article
         },
-        obtenerLeccionesPorModulo: async (_, {id}, ctx) => {
+        obtenerLeccionesPorModulo: async (_, { id }, ctx) => {
             ValidarToken(ctx)
-            const lecciones = await Leccion.find({modulo:id})
+            const lecciones = await Leccion.find({ modulo: id })
             return lecciones
         }
     },
@@ -155,7 +157,7 @@ const resolvers = {
                 throw new Error('El email ya está registrado')
             }
             const existeTutorndoc = await Tutor.findOne({ ndoc })
-            
+
             if (existeTutorndoc) {
                 throw new Error('El ndoc ya está registrado')
             }
@@ -329,9 +331,9 @@ const resolvers = {
             const existeTutor = await Tutor.findOne({ _id: tutor })
             if (!existeTutor) throw new Error('El tutor seleccionado no existe')
             //Revisar si el tutor de grupo ya está registrado(por mientras lo haré así:)
-            
+
             const existeTutorGrupo = await Grupo.findOne({ tutor: existeTutor })
-            
+
             if (existeTutorGrupo) throw new Error('El tutor seleccionado ya tiene grupo a cargo')
             //Agregando nivel y tutor al input
             input.nivel = existeNivel
@@ -461,9 +463,9 @@ const resolvers = {
                 throw new Error('El password es incorrecto')
             }
             existeAlumno.tipo = 'alumno'
-            let { id , nombre, apellido, tipo, grupo:{nivel} } = existeAlumno
-            nivel = {...nivel, id: nivel._id}
-            const usuario = {id,email:existeAlumno.email,nombre,apellido,tipo, nivel}
+            let { id, nombre, apellido, tipo, grupo: { nivel } } = existeAlumno
+            nivel = { ...nivel, id: nivel._id }
+            const usuario = { id, email: existeAlumno.email, nombre, apellido, tipo, nivel }
             const Token = {
                 token: CrearToken(existeAlumno, process.env.PALABRA_SECRETA_TOKEN, '24h'),
                 usuario
@@ -618,19 +620,42 @@ const resolvers = {
             await Leccion.deleteOne({ _id: id })
             return "Lección eliminada"
         },
-        async singleUpload(_, { file }) {
-            const { stream, filename, mimetype, encoding } = await file;
-            console.log(file)
-            // 1. Validate file metadata.
-      
-            // 2. Stream file contents into cloud storage:
-            // https://nodejs.org/api/stream.html
-      
-            // 3. Record the file upload in your DB.
-            // const id = await recordFile( … )
-      
-            return { filename, mimetype, encoding };
-          }
+        uploadFile: async (parent, { file }) => {
+            const { createReadStream, filename, mimetype, encoding } = await file;
+            //console.log(file)
+            console.log(path)
+            const stream = createReadStream();
+            // Store the file in the filesystem.
+            await new Promise((resolve, reject) => {
+                stream.on('error', error => {
+                    unlink(path, () => {
+                        console.log('path:', path)
+                        reject(error);
+                    });
+                }).pipe(createWriteStream(filename))
+                    .on('error', reject)
+                    .on('finish', resolve)
+            });
+            console.log('-----------file written');
+            return file;
+        },
+        uploadFiles: async (parent, { files }) => {
+            files.map(async (file) => {
+                const { createReadStream, filename } = await file;
+                const stream = createReadStream();
+
+                await new Promise((resolve, reject) => {
+                    stream.on('error', (error) => {
+                        console.log('writerror....', error);
+                    })
+                        .pipe(createWriteStream(filename))
+                        .on('error', reject)
+                        .on('finish', resolve);
+                });
+                console.log('-----------files written');
+            });
+            return files;
+        }
     }
 }
 

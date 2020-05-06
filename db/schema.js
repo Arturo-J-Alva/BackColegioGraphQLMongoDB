@@ -307,7 +307,8 @@ const typeDefs = gql`
     eliminarLeccion(id:ID!): String
 
     #Upload
-    singleUpload(file: Upload!): File!
+    uploadFile(file: Upload!): File!
+    uploadFiles(files: [Upload]!): [File]!
     }
 `
 
