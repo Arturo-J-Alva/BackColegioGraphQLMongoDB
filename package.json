@@ -16,7 +16,9 @@
     "bcryptjs": "^2.4.3",
     "dotenv": "^8.2.0",
     "jsonwebtoken": "^8.5.1",
-    "mongoose": "^5.9.10"
+    "mkdirp": "^1.0.4",
+    "mongoose": "^5.9.10",
+    "shortid": "^2.2.15"
   },
   "devDependencies": {
     "nodemon": "^2.0.3"
