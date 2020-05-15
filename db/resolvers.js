@@ -623,7 +623,6 @@ const resolvers = {
         uploadFile: async (parent, { file }) => {
             const { createReadStream, filename, mimetype, encoding } = await file;
             //console.log(file)
-            console.log(path)
             const stream = createReadStream();
             // Store the file in the filesystem.
             await new Promise((resolve, reject) => {
