@@ -133,6 +133,10 @@ const typeDefs = gql`
         mimetype: String!
         encoding: String!
     }
+    type Post {
+        author: String
+        comment: String
+    }
 
     enum Sexo{
         MASCULINO
@@ -261,6 +265,9 @@ const typeDefs = gql`
 
     #upload
     uploads: [File]
+
+    #post
+    posts: [Post]
     }
 
     type Mutation {
@@ -309,6 +316,13 @@ const typeDefs = gql`
     #Upload
     uploadFile(file: Upload!): File!
     uploadFiles(files: [Upload]!): [File]!
+    
+    #Post
+    addPost(author: String, comment: String): Post
+    }
+
+    type Subscription {
+    postAdded: Post
     }
 `
 

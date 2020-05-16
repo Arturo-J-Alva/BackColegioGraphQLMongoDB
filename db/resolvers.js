@@ -1,3 +1,5 @@
+const { PubSub } = require('apollo-server')
+
 const Nivel = require('../models/Nivel')
 const Profesor = require('../models/Profesor')
 const Tutor = require('../models/Tutor')
@@ -6,9 +8,14 @@ const Alumno = require('../models/Alumno')
 const Curso = require('../models/Curso')
 const Modulo = require('../models/Modulo')
 const Leccion = require('../models/Leccion')
+const Post = require('../models/Post')
 const axios = require('axios')
 
+const POST_ADDED = 'POST_ADDED'
+
 const { createWriteStream } = require('fs');
+
+const pubsub = new PubSub();
 
 var bcryptjs = require('bcryptjs')
 const jwt = require('jsonwebtoken')
@@ -86,6 +93,10 @@ const resolvers = {
             ValidarToken(ctx)
             const lecciones = await Leccion.find({ modulo: id })
             return lecciones
+        },
+        posts: async (root, args, context) => {
+            const post = await Post.find({})
+            return post
         }
     },
     Mutation: {
@@ -654,7 +665,18 @@ const resolvers = {
                 console.log('-----------files written');
             });
             return files;
+        },
+        addPost: async (root, args, context) => {
+            pubsub.publish(POST_ADDED, { postAdded: args })
+            const newPost = new Post({ author: args.author, comment: args.comment });
+            await newPost.save()
+            return newPost
         }
+    },
+    Subscription: {
+        postAdded: {
+			subscribe: () => pubsub.asyncIterator([POST_ADDED])
+		}
     }
 }
 
