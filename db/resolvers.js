@@ -11,16 +11,21 @@ const Leccion = require('../models/Leccion')
 const Post = require('../models/Post')
 const axios = require('axios')
 
+
 const POST_ADDED = 'POST_ADDED'
 
 const { createWriteStream } = require('fs');
 
 const pubsub = new PubSub();
 
+//SDK AWS S3
+const { extname } = require('path');
+const { v4: uuid } = require('uuid'); // (A)
+const s3 = require('../s3'); 
+
 var bcryptjs = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 require('dotenv').config({ path: 'variables.env' })
-
 const CrearToken = (usuario, secreta, expiresIn) => {
     //console.log(usuario)
     const { id, email, nombre, apellido, ndoc, tipo } = usuario
@@ -666,12 +671,28 @@ const resolvers = {
             });
             return files;
         },
-        addPost: async (root, args, context) => {
+        addPost: async (root, args, context) => { /* Subscription */
             pubsub.publish(POST_ADDED, { postAdded: args })
             const newPost = new Post({ author: args.author, comment: args.comment });
             await newPost.save()
             return newPost
-        }
+        },
+        uploadWithS3: async (_, { file }) => { /* AWS S3 */
+            const { createReadStream, filename, mimetype, encoding } = await file;
+            const { Location } = await s3.upload({ // (C)
+                Body: createReadStream(),               
+                //Key: `${uuid()}${extname(filename)}`,  
+                Key: `${uuid()}_${filename}`,  
+                ContentType: mimetype                   
+              }).promise(); 
+
+            return {
+              filename,
+              mimetype,
+              encoding,
+              uri: Location,
+            };
+          }
     },
     Subscription: {
         postAdded: {

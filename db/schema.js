@@ -129,6 +129,7 @@ const typeDefs = gql`
         descripcion: String
     }
     type File {
+        uri: String!
         filename: String!
         mimetype: String!
         encoding: String!
@@ -319,7 +320,11 @@ const typeDefs = gql`
     
     #Post
     addPost(author: String, comment: String): Post
+
+    #AWS S3
+    uploadWithS3(file: Upload!): File
     }
+    
 
     type Subscription {
     postAdded: Post
