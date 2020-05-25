@@ -1,8 +1,8 @@
 const { ApolloServer/* , PubSub */ } = require('apollo-server')
-const typeDefs = require('./db/schema')
-const resolvers = require('./db/resolvers')
+const typeDefs = require('./src/schema')
+const resolvers = require('./src/resolvers')
 
-const conectarDB = require('./config/db')
+const conectarDB = require('./src/config/db')
 
 const jwt = require('jsonwebtoken')
 require('dotenv').config({ path: 'variables.env' })

@@ -1,6 +1,6 @@
 const s3 = require('./s3');
 const { S3Uploader,uuidFilenameTransform,FilesystemUploader } = require('./lib/gql-uploaders');
-const config = require('./config/configUploaders');
+const config = require('./config/configUploaders')
 
 const avatarUploader = new S3Uploader(s3, {
   baseKey: 'PintoStore/fotos',
