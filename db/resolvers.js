@@ -1,5 +1,6 @@
 const { PubSub } = require('apollo-server')
 
+const { Types: { ObjectId } } = require('mongoose')
 const Nivel = require('../models/Nivel')
 const Profesor = require('../models/Profesor')
 const Tutor = require('../models/Tutor')
@@ -11,17 +12,13 @@ const Leccion = require('../models/Leccion')
 const Post = require('../models/Post')
 const axios = require('axios')
 
-
 const POST_ADDED = 'POST_ADDED'
 
 const { createWriteStream } = require('fs');
 
 const pubsub = new PubSub();
 
-//SDK AWS S3
-const { extname } = require('path');
-const { v4: uuid } = require('uuid'); // (A)
-const s3 = require('../s3'); 
+const { avatarUploader, imagenesGeneralesUploader, RecursosUploader, TareasUploader, DeleteObjectS3 } = require('../uploaders');
 
 var bcryptjs = require('bcryptjs')
 const jwt = require('jsonwebtoken')
@@ -35,7 +32,7 @@ const CrearToken = (usuario, secreta, expiresIn) => {
 
 const ValidarToken = (ctx) => {
     if (ctx.authToken === 'expired') throw new Error('Token expired')
-    //if (ctx.authToken === 'invalid' || !ctx.authToken) throw new Error('Token invalid')
+    if (ctx.authToken === 'invalid' || !ctx.authToken) throw new Error('Token invalid')
 }
 
 //Resolvers
@@ -71,6 +68,31 @@ const resolvers = {
             const cursos = await Curso.find({})
             return cursos
         },
+        obtenerCursosPorProfesor: async (_, { id }, ctx) => {
+            ValidarToken(ctx)
+            //Verificar si profe existe
+            profesorExiste = await Profesor.findById(id)
+            if (!profesorExiste) throw new Error('El profesor no existe')
+            const cursos = await Curso.find({
+                profesores: {
+                    $in: [profesorExiste]
+                }
+            })
+            return cursos
+        },
+        obtenerCursoPorID: async (_, { id }, ctx) => {
+            ValidarToken(ctx)
+            //console.log(ctx)
+            //Verificar si el curso existe
+            cursoExiste = await Curso.findById(id)
+            if (!cursoExiste) throw new Error('El curso no existe')
+
+            //Verificar si el curso le corresponde al profesor
+            const { usuario } = ctx
+            const profVerif = cursoExiste.profesores.filter(prof => prof._id.toString() === usuario.id)
+            if (profVerif.length === 0) throw new Error('No tienes las credenciales')
+            return cursoExiste
+        },
         obtenerModulos: async (_, { }, ctx) => {
             ValidarToken(ctx)
             const modulos = await Modulo.find({})
@@ -78,12 +100,34 @@ const resolvers = {
         },
         obtenerModulosPorCurso: async (_, { id }, ctx) => {
             ValidarToken(ctx)
-            const modulos = await Modulo.find({ curso: id }).populate('curso')
+            const { tipo } = ctx.usuario
+            const idprof = ctx.usuario.id
+            let condProf = false
+            const modulos = await Modulo.find({ "curso._id": ObjectId(id) })
+
+            if (modulos.length > 0) {
+                modulos.map(modulo => {
+                    //eliminando curso._id y agregando curso.id (ésto no es necesario pero estoy probando)
+                    modulo.curso.id = modulo.curso._id
+                    delete modulo.curso._id
+                    modulo.curso.profesores.map((prof) => {
+                        if (tipo === 'profesor') {
+                            //Verificar si el curso le corresponde al profesor (ésto si es necesario)
+                            if (prof._id.toString() === idprof) condProf = prof._id.toString() === idprof || condProf
+                        }
+                        //eliminando profe._id y agregando profe.id (ésto no es necesario pero estoy probando)
+                        prof.id = prof._id
+                        delete prof._id
+                    })
+                })
+                if (tipo === 'profesor' && !condProf) throw new Error('No tienes las credenciales')
+            }
+
             return modulos
         },
         obtenerLecciones: async (_, { }, ctx) => {
             ValidarToken(ctx)
-            const lecciones = await Leccion.find({})
+            const lecciones = await Leccion.find({}).populate('modulo')
             return lecciones
         },
         getArticulos: async () => {
@@ -96,7 +140,22 @@ const resolvers = {
         },
         obtenerLeccionesPorModulo: async (_, { id }, ctx) => {
             ValidarToken(ctx)
-            const lecciones = await Leccion.find({ modulo: id })
+            const { tipo } = ctx.usuario
+            const iduser = ctx.usuario.id
+            //Verificar si existe módulo
+            const moduloExiste = await Modulo.findById(id)
+            if (!moduloExiste) throw new Error('El módulo no existe')
+            const lecciones = await Leccion.find({ "modulo": id }).populate('modulo')
+            //si es profe verificar que el modulo (y curso) le corresponde
+            if (tipo === 'profesor') {
+                const verf = moduloExiste.curso.profesores.filter(prof => prof._id.toString() === iduser)
+                if (verf.length === 0) throw new Error('No tienes las credenciales')
+            }
+            return lecciones
+        },
+        obtenerLeccionesPorID: async (_, { id }, ctx) => {
+            ValidarToken(ctx)
+            const lecciones = await Leccion.findById(id).populate('modulo')
             return lecciones
         },
         posts: async (root, args, context) => {
@@ -322,16 +381,17 @@ const resolvers = {
             if (!existeProfesor) {
                 throw new Error('No existe profesor con ese email')
             }
-
             //Revisar si el password es correcto
             const passwordCorrecto = await bcryptjs.compare(password, existeProfesor.password)
             if (!passwordCorrecto) {
                 throw new Error('El password es incorrecto')
             }
             existeProfesor.tipo = 'profesor'
-            //Crear el token
+            let { id, nombre, apellido, tipo } = existeProfesor
+            const usuario = { id, email: existeProfesor.email, nombre, apellido, tipo }
             return {
-                token: CrearToken(existeProfesor, process.env.PALABRA_SECRETA_TOKEN, '24h')
+                token: CrearToken(existeProfesor, process.env.PALABRA_SECRETA_TOKEN, '24h'),
+                usuario
             }
         },
         nuevoGrupo: async (_, { input }, ctx) => {
@@ -499,7 +559,7 @@ const resolvers = {
             if (!existeNivel) throw new Error('El nivel seleccionado no existe')
             //Verificar si los profesores existen
             let profesores = []
-            for await (const idprof of input.profesores) { //si se usa map o forEach no se podrá hacerse asincronamente, ésta función sí se puede
+            for await (const idprof of input.profesores) { //si se usa map o forEach no se podrá hacerse asincronamente, en ésta función sí se puede
                 const profesor = await Profesor.findById(idprof)
                 if (!profesor) throw new Error('No existe al menos un profesor seleccionado')
                 profesores = [...profesores, profesor]
@@ -549,6 +609,13 @@ const resolvers = {
             }
             //Guardando en la DB
             curso = await Curso.findOneAndUpdate({ _id: id }, input, { new: true })
+            //Hallando modulos que contienen el curso
+            const modulos = await Modulo.find({ "curso._id": ObjectId(id) })
+            //Actualizando curso de cada modulo
+            for await (const modulo of modulos) {
+                modulo.curso = curso
+                await Modulo.updateOne({ _id: modulo._id }, modulo)
+            }
             return curso
         },
         eliminarCurso: async (_, { id }, ctx) => {
@@ -557,7 +624,7 @@ const resolvers = {
             const cursoExiste = await Curso.findById(id)
             if (!cursoExiste) throw new Error('El curso no existe')
             //verificando si el Curso no tiene contenido (Módulos)
-            const modulos = await Modulo.find({ curso: id })
+            const modulos = await Modulo.find({ "curso._id": id })
             if (modulos.length > 0) throw new Error('Solo se permite elimimar cursos sin contenido')
             //Guardando cambios en la DB
             await Curso.deleteOne({ _id: id })
@@ -569,6 +636,8 @@ const resolvers = {
             //Verificando si el curso existe
             const cursoExiste = await Curso.findById(curso)
             if (!cursoExiste) throw new Error('El curso no existe')
+            //agregando curso al input
+            input.curso = cursoExiste
             //Guardando en la DB
             const modulo = new Modulo(input)
             await modulo.save()
@@ -582,11 +651,21 @@ const resolvers = {
             if (!modulo) throw new Error('El módulo no existe')
             if (curso) {
                 //Verificando si el curso existe
-                const cursoExiste = await Curso.findById(curso)
+                let cursoExiste = await Curso.findById(curso)
                 if (!cursoExiste) throw new Error('El curso no existe')
-            }
+                //agregando curso al input
+                input.curso = cursoExiste
+            } else delete input.curso
+
             //Guardando en la DB
             modulo = await Modulo.findOneAndUpdate({ _id: id }, input, { new: true })
+            //editando el modulo para que pueda recibir curso.id 
+            if (curso) {
+                let { _id, nombre, nivel, imagen, creado, profesores } = modulo.curso
+                let editCurso = { id: _id, nombre, nivel, imagen, creado, profesores }
+                modulo.curso = editCurso
+            }
+
             return modulo
         },
         eliminarModulo: async (_, { id }, ctx) => {
@@ -601,19 +680,53 @@ const resolvers = {
             await Modulo.deleteOne({ _id: id })
             return "Módulo eliminado"
         },
-        nuevoLeccion: async (_, { input }, ctx) => {
+        nuevoLeccion: async (_, { input, filesRec, filesTar, fileImg }, ctx) => {
             ValidarToken(ctx)
+            const { usuario: { tipo } } = ctx
+            if (tipo !== 'profesor') throw new Error('No tienes las credenciales')
             const { modulo } = input
             //Verificando si el curso existe
             const moduloExiste = await Modulo.findById(modulo)
             if (!moduloExiste) throw new Error('El modulo no existe')
+            if (filesRec.length > 0) {
+                for await (const { name, file } of filesRec) {
+                    const { createReadStream, filename, mimetype, encoding } = await file
+                    const uri = await RecursosUploader.upload(createReadStream(), {
+                        filename,
+                        mimetype,
+                    });
+                    input.recursos = [...input.recursos, { nombre: name, link: uri }]
+                }
+            }
+            if (filesTar.length > 0) {
+                for await (const { name, file } of filesTar) {
+                    const { createReadStream, filename, mimetype, encoding } = await file
+                    const uri = await TareasUploader.upload(createReadStream(), {
+                        filename,
+                        mimetype,
+                    });
+                    input.tareas = [...input.tareas, { nombre: name, link: uri }]
+                }
+            }
+
+            if (fileImg) {
+                const { createReadStream, filename, mimetype, encoding } = await fileImg
+                const uri = await imagenesGeneralesUploader.upload(createReadStream(), {
+                    filename,
+                    mimetype,
+                });
+                input.imagen = uri
+            }
             //Guardando en la DB
-            const leccion = new Leccion(input)
+            let leccion = new Leccion(input)
             await leccion.save()
+            leccion.modulo = moduloExiste
             return leccion
         },
-        actualizarLeccion: async (_, { id, input }, ctx) => {
+        actualizarLeccion: async (_, { id, input, filesRec, filesTar, fileImg }, ctx) => {
             ValidarToken(ctx)
+            const { usuario } = ctx
+            if (usuario.tipo !== 'profesor') throw new Error('No tienes las credenciales')
             const { modulo } = input
             //Verificando si la leccion existe
             let leccion = await Leccion.findById(id)
@@ -623,15 +736,94 @@ const resolvers = {
                 const moduloExiste = await Modulo.findById(modulo)
                 if (!moduloExiste) throw new Error('El modulo no existe')
             }
+            //obteniendo los files recursos y tareas que fueron "eliminados" desde el front
+            let recursosEliminados = []
+            leccion.recursos.map(db => {
+                let cond = true
+                input.recursos.map(front => {
+                    if (front.link !== db.link) cond = cond && true
+                    else cond = cond && false
+                })
+                if (cond === true) recursosEliminados = [...recursosEliminados, db]
+            })
+            console.log('recursosEliminados:', recursosEliminados.length)
+            let tareasEliminadas = []
+            leccion.tareas.map(db => {
+                let cond = true
+                input.tareas.map(front => {
+                    if (front.link !== db.link) cond = cond && true
+                    else cond = cond && false
+                })
+                if (cond === true) tareasEliminadas = [...tareasEliminadas, db]
+            })
+            console.log('tareasEliminadas:', tareasEliminadas.length)
+            //eliminando los objectos corresondiente a los recursos y tareas eliminados (no es necesario que sea asíncrono, ya que la respuesta no es de utilidad)
+             for /* await */({link} of recursosEliminados){
+               /* const res = await  */DeleteObjectS3(link)
+               //console.log('res recursosEliminados:',res)
+            }
+            for /* await */({link} of tareasEliminadas){
+                /* const res = await  */DeleteObjectS3(link)
+               //console.log('res tareasEliminados:',res)
+            }
+            //igualmente con imagen, si se ha modficado eliminar el ya existente de s3
+            if(input.imagen){
+                DeleteObjectS3(leccion.imagen)
+            }
+
+            if (filesRec.length > 0) {
+                for await (const { name, file } of filesRec) {
+                    const { createReadStream, filename, mimetype, encoding } = await file
+                    const uri = await RecursosUploader.upload(createReadStream(), {
+                        filename,
+                        mimetype,
+                    });
+                    input.recursos = [...input.recursos, { nombre: name, link: uri }]
+                }
+            }
+            if (filesTar.length > 0) {
+                for await (const { name, file } of filesTar) {
+                    const { createReadStream, filename, mimetype, encoding } = await file
+                    const uri = await TareasUploader.upload(createReadStream(), {
+                        filename,
+                        mimetype,
+                    });
+                    input.tareas = [...input.tareas, { nombre: name, link: uri }]
+                }
+            }
+            if (fileImg) {
+                const { createReadStream, filename, mimetype, encoding } = await fileImg
+                const uri = await imagenesGeneralesUploader.upload(createReadStream(), {
+                    filename,
+                    mimetype,
+                });
+                input.imagen = uri
+            }
+            //Obteniendo dato de los profesores correspondientes para verificar si el profe es correspondiente 
+            //(....pendiente)
             //Guardando en la DB
-            leccion = await Leccion.findOneAndUpdate({ _id: id }, input, { new: true })
+            leccion = await Leccion.findOneAndUpdate({ _id: id }, input, { new: true }).populate('modulo')
+            /* //Verificar si la lección (curso) le corresponde al profesor (no tiene sentido hacer esto antes de la act. a la db)
+            const verifProf = leccion.modulo.curso.profesores.filter(prof => prof._id.toString()===usuario.id)
+            if(verifProf.length===0) throw new Error('No tienes las credenciales') */
             return leccion
         },
         eliminarLeccion: async (_, { id }, ctx) => {
             ValidarToken(ctx)
+            const { usuario: { tipo } } = ctx
+            if (tipo !== 'profesor') throw new Error('No tienes las credenciales')
             //Verificando si el leccion existe
             let leccion = await Leccion.findById(id)
             if (!leccion) throw new Error('La lección no existe')
+            //Eliminando los archivos de la lección síncronamente
+            for ({link} of leccion.recursos){
+                DeleteObjectS3(link)
+            }
+            for ({link} of leccion.tareas){
+                DeleteObjectS3(link)
+            }
+            DeleteObjectS3(leccion.imagen)
+
             //Guardando cambios en la DB
             await Leccion.deleteOne({ _id: id })
             return "Lección eliminada"
@@ -679,25 +871,48 @@ const resolvers = {
         },
         uploadWithS3: async (_, { file }) => { /* AWS S3 */
             const { createReadStream, filename, mimetype, encoding } = await file;
-            const { Location } = await s3.upload({ // (C)
+            /* const { Location } = await s3.upload({ 
                 Body: createReadStream(),               
                 //Key: `${uuid()}${extname(filename)}`,  
                 Key: `${uuid()}_${filename}`,  
                 ContentType: mimetype                   
-              }).promise(); 
-
+              }).promise();  */
+            const uri = await avatarUploader.upload(createReadStream(), {
+                filename,
+                //filename:`${uuid()}_${filename}`,
+                mimetype,
+            });
             return {
-              filename,
-              mimetype,
-              encoding,
-              uri: Location,
+                filename,
+                mimetype,
+                encoding,
+                uri,
             };
-          }
+        },
+        uploadImagesCourseTeacher: async (_, { file, id }) => {
+            const { createReadStream, filename, mimetype, encoding } = await file;
+            const splitExt = filename.split('.')
+            const ext = splitExt[splitExt.length - 1]
+            if (ext !== 'jpg' && ext !== 'png' && ext !== 'svg' && ext !== 'gif' && ext !== 'jpeg') throw new Error('Seleccione una imagen')
+            const uri = await imagenesGeneralesUploader.upload(createReadStream(), {
+                filename,
+                mimetype,
+            });
+            const curso = await Curso.findOneAndUpdate({ _id: id }, { imagen: uri }, { new: true })
+            //Hallando modulos que contienen el curso
+            const modulos = await Modulo.find({ "curso._id": ObjectId(id) })
+            //Actualizando curso de cada modulo
+            for await (const modulo of modulos) {
+                modulo.curso = curso
+                await Modulo.updateOne({ _id: modulo._id }, modulo)
+            }
+            return curso
+        }
     },
     Subscription: {
         postAdded: {
-			subscribe: () => pubsub.asyncIterator([POST_ADDED])
-		}
+            subscribe: () => pubsub.asyncIterator([POST_ADDED])
+        }
     }
 }
 

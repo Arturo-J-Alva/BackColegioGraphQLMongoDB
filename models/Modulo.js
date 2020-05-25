@@ -7,9 +7,8 @@ const ModuloSchema = mongoose.Schema({
         trim: true
     },
     curso: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: Object,
         required: true,
-        ref: 'Curso'
     },
     imagen:{
         type: String,

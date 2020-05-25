@@ -91,7 +91,7 @@ const typeDefs = gql`
     type Modulo {
         id: ID
         nombre: String
-        curso: ID
+        curso: Curso
         imagen: String
         creado: String
     }
@@ -105,8 +105,9 @@ const typeDefs = gql`
     type Leccion {
         id: ID
         nombre: String
-        modulo: ID
-        teoria:[Teoria]
+        modulo: Modulo
+        descripcion: String
+        video: String
         recursos:[Recurso]
         tareas:[Tarea]
         imagen: String
@@ -212,10 +213,15 @@ const typeDefs = gql`
     input LeccionInput {
         nombre: String
         modulo: ID
-        teoria:[TeoriaInput]
+        descripcion: String
+        video: String
         recursos:[RecursoInput]
         tareas:[TareaInput]
         imagen: String
+    }
+    input InputFile {
+        name: String
+        file: Upload
     }
     input TeoriaInput {
         nombre: String
@@ -252,6 +258,8 @@ const typeDefs = gql`
 
     #Curso
     obtenerCursos:[Curso]
+    obtenerCursosPorProfesor(id:ID!):[Curso]
+    obtenerCursoPorID(id:ID!):Curso
 
     #Módulo
     obtenerModulos:[Modulo]
@@ -260,6 +268,7 @@ const typeDefs = gql`
     #Leccion
     obtenerLecciones:[Leccion]
     obtenerLeccionesPorModulo(id:ID!):[Leccion]
+    obtenerLeccionesPorID(id:ID!):Leccion
 
     #Peticion http get
     getArticulos: Article
@@ -310,8 +319,8 @@ const typeDefs = gql`
     eliminarModulo(id:ID!): String
 
     #Leccion
-    nuevoLeccion(input:LeccionInput!):Leccion
-    actualizarLeccion(id:ID!,input:LeccionInput): Leccion
+    nuevoLeccion(input:LeccionInput!,filesRec:[InputFile],filesTar:[InputFile],fileImg:Upload):Leccion
+    actualizarLeccion(id:ID!,input:LeccionInput,filesRec:[InputFile],filesTar:[InputFile],fileImg:Upload): Leccion
     eliminarLeccion(id:ID!): String
 
     #Upload
@@ -323,6 +332,7 @@ const typeDefs = gql`
 
     #AWS S3
     uploadWithS3(file: Upload!): File
+    uploadImagesCourseTeacher(file: Upload!,id:ID!): Curso
     }
     
 

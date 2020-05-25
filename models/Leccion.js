@@ -4,25 +4,27 @@ const LeccionSchema = mongoose.Schema({
     nombre: {
         type: String,
         required: true,
-        trim: true,
-        unique: true
+        trim: true
+        //unique: true
     },
     modulo: {
         type: mongoose.Schema.Types.ObjectId,
         required: true,
         ref: 'Modulo'
     },
-    teoria: {
-        type: Array,
-        required: true
+    descripcion: {
+        type: String,
+        trim: true
+    },
+    video: {
+        type: String,
+        trim: true
     },
     recursos: {
-        type: Array,
-        required: true
+        type: Array
     },
     tareas: {
-        type: Array,
-        required: true
+        type: Array
     },
     imagen:{
         type: String,
