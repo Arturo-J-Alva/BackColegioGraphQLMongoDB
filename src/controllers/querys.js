@@ -18,13 +18,11 @@ const ValidarToken = (ctx) => {
 
 const controller = {
     obtenerNiveles: async (_, { }, ctx) => {
-        console.log(ctx)
         ValidarToken(ctx)
         const niveles = await Nivel.find({})
         return niveles
     },
     obtenerTutores: async (_, { }, ctx) => {
-        console.log(ctx)
         ValidarToken(ctx)
         const tutores = await Tutor.find({})
         return tutores
@@ -47,12 +45,17 @@ const controller = {
     obtenerCursos: async (_, { }, ctx) => {
         ValidarToken(ctx)
         const cursos = await Curso.find({})
+        //Elimnando _id y reemplazando por id en curso.profesores
+        cursos.map(curso => {
+            const editProf = curso.profesores.map(({_id,...profs}) => {return {...profs,id:_id}})
+            curso.profesores=editProf
+        })
         return cursos
     },
     obtenerCursosPorProfesor: async (_, { id }, ctx) => {
         ValidarToken(ctx)
         //Verificar si profe existe
-        profesorExiste = await Profesor.findById(id)
+        const profesorExiste = await Profesor.findById(id)
         if (!profesorExiste) throw new Error('El profesor no existe')
         const cursos = await Curso.find({
             profesores: {
@@ -83,9 +86,9 @@ const controller = {
         ValidarToken(ctx)
         const { tipo } = ctx.usuario
         const idprof = ctx.usuario.id
-        let condProf = false
+        
         const modulos = await Modulo.find({ "curso._id": ObjectId(id) })
-
+        let condProf = false
         if (modulos.length > 0) {
             modulos.map(modulo => {
                 //eliminando curso._id y agregando curso.id (ésto no es necesario pero estoy probando)

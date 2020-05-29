@@ -13,7 +13,7 @@ const {nuevoNivel,actualizarNivel,eliminarNivel,nuevoTutor,actualizarTutor,elimi
     nuevoProfesor,actualizarProfesor,eliminarProfesor,autenticarProfesor,nuevoGrupo,actualizarGrupo,eliminarGrupo,
     nuevoAlumno,actualizarAlumno,autenticarAlumno,nuevoCurso,actualizarCurso,eliminarCurso,nuevoModulo,
     actualizarModulo,eliminarModulo,nuevoLeccion,actualizarLeccion,eliminarLeccion,uploadFile,uploadFiles,
-    uploadWithS3,uploadImagesCourseTeacher} = require('./controllers/mutations')
+    uploadWithS3,uploadImagesCourseTeacher,nuevoAdmin,autenticarAdmin} = require('./controllers/mutations')
 
 //Resolvers
 const resolvers = {
@@ -70,7 +70,9 @@ const resolvers = {
             return newPost
         },
         uploadWithS3,
-        uploadImagesCourseTeacher
+        uploadImagesCourseTeacher,
+        nuevoAdmin,
+        autenticarAdmin
     },
     Subscription: {
         postAdded: {

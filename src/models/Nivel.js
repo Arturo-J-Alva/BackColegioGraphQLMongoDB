@@ -9,7 +9,6 @@ const NivelSchema = mongoose.Schema({
     },
     cronograma: {
         type: String,
-        required: true,
         trim: true
     }
 })

@@ -139,6 +139,15 @@ const typeDefs = gql`
         author: String
         comment: String
     }
+    type Admin {
+        id: ID
+        nombre: String
+        apellido: String
+        telefono: String
+        ndoc: Ndoc
+        sexo: Sexo
+        email: String
+    }
 
     enum Sexo{
         MASCULINO
@@ -153,7 +162,7 @@ const typeDefs = gql`
 
     input NivelInput {
         nombre:String!
-        cronograma: String
+        cronograma: Upload
     }
     input TutorInput {
         nombre: String
@@ -239,6 +248,15 @@ const typeDefs = gql`
         link: String
         descripcion: String
     }
+    input AdminInput{
+        nombre: String
+        apellido: String
+        telefono: String
+        ndoc: NdocInput
+        sexo: Sexo
+        email: String
+        password: String
+    }
 
     type Query {
     #Nivel
@@ -307,7 +325,7 @@ const typeDefs = gql`
     nuevoAlumno(input:AlumnoInput!):Alumno
     actualizarAlumno(id: ID!, input:AlumnoInput):Alumno
 
-    #Alumno
+    #Curso
     nuevoCurso(input:CursoInput!):Curso
     actualizarCurso(id:ID!,input:CursoInput):Curso
     eliminarCurso(id:ID!): String
@@ -333,8 +351,11 @@ const typeDefs = gql`
     #AWS S3
     uploadWithS3(file: Upload!): File
     uploadImagesCourseTeacher(file: Upload!,id:ID!): Curso
+
+    #Admninistrador
+    nuevoAdmin(input:AdminInput!):Admin
+    autenticarAdmin(input: AutenticarInput!): Token
     }
-    
 
     type Subscription {
     postAdded: Post

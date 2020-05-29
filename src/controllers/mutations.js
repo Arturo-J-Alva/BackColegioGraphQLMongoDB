@@ -7,6 +7,7 @@ const Alumno = require('../models/Alumno')
 const Curso = require('../models/Curso')
 const Modulo = require('../models/Modulo')
 const Leccion = require('../models/Leccion')
+const Admin = require('../models/Admin')
 
 const { createWriteStream } = require('fs');
 const { avatarUploader, imagenesGeneralesUploader, RecursosUploader, TareasUploader, DeleteObjectS3 } = require('../uploaders');
@@ -30,28 +31,35 @@ const ValidarToken = (ctx) => {
 const controller = {
     nuevoNivel: async (_, { input }, ctx) => {
         ValidarToken(ctx)
-        const { nombre } = input
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
+        const { nombre, cronograma } = input
         //Revisar si el nivel ya está registrado
         const existeNivel = await Nivel.findOne({ nombre })
         //console.log('existenivel:',existeNivel)
         if (existeNivel) {
             throw new Error('El nivel ya está registrado')
         }
-
-        try {
-            //Guardarlo en la BD
-            const nivel = new Nivel(input) //Creando nueva instancia del modelo nivel
-            await nivel.save()
-            //console.log('nivel:',nivel)
-            return nivel
-        } catch (e) {
-            console.log(e)
-            throw new Error('Error del servidor')
+        if (cronograma) {
+            const { createReadStream, filename, mimetype, encoding } = await cronograma
+            const uri = await imagenesGeneralesUploader.upload(createReadStream(), {
+                filename,
+                mimetype,
+            });
+            input.cronograma = uri
         }
+
+        //Guardarlo en la BD
+        const nivel = new Nivel(input) //Creando nueva instancia del modelo nivel
+        await nivel.save()
+        //console.log('nivel:',nivel)
+        return nivel
     },
     actualizarNivel: async (_, { id, input }, ctx) => {
         ValidarToken(ctx)
-        const { nombre } = input
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
+        const { nombre, cronograma } = input
         //verificar si ese nivel existe
         let nivel = await Nivel.findById(id)
         if (!nivel) throw new Error('El nivel no existe')
@@ -59,6 +67,18 @@ const controller = {
         if (nombre) {
             const verifNombre = await Nivel.findOne({ nombre })
             if (verifNombre && !(verifNombre._id.toString() === id)) throw new Error('El nombre ya está siendo usado')
+        }
+        if (cronograma) {
+            const { createReadStream, filename, mimetype, encoding } = await cronograma
+            const uri = await imagenesGeneralesUploader.upload(createReadStream(), {
+                filename,
+                mimetype,
+            });
+            input.cronograma = uri
+            if (nivel.cronograma) DeleteObjectS3(nivel.cronograma)
+        } else {
+            //Si no se envia file cronograma se elimina cronograma (null) de input 
+            delete input.cronograma
         }
         //Guardando en la DB
         nivel = await Nivel.findOneAndUpdate({ _id: id }, input, { new: true })
@@ -75,19 +95,42 @@ const controller = {
                 "grupo.nivel": nivelJSON
             }
         })
+        //actualizando nivel de cursos
+        await Curso.updateMany({ "nivel._id": nivel._id }, {
+            $set: {
+                nivel: nivelJSON
+            }
+        })
+        //actualizando nivel de modulos
+        await Modulo.updateMany({ "curso.nivel._id": nivel._id }, {
+            $set: {
+                "curso.nivel": nivelJSON
+            }
+        })
         return nivel
     },
     eliminarNivel: async (_, { id }, ctx) => {
         ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
         //Verificar que exista el producto
         let nivel = await Nivel.findById(id)
         if (!nivel) throw new Error('Nivel no encontrado')
+        //Verificando si no existen grupos o cursos con ese nivel
+        const existeGrupo = await Grupo.find({ "nivel._id": ObjectId(id) })
+        if (existeGrupo.length > 0) throw new Error('Solo se puede eliminar Niveles sin contenido')
+        const existeCurso = await Curso.find({ "nivel._id": ObjectId(id) })
+        if (existeCurso.length > 0) throw new Error('Solo se puede eliminar Niveles sin contenido')
+        //Elimando el file cronograma de s3
+        if (nivel.cronograma) DeleteObjectS3(nivel.cronograma)
         //Guardando en la DB
-        await Nivel.findOneAndRemove({ _id: id })
+        await Nivel.findOneAndDelete({ _id: id })
         return "Nivel eliminado"
     },
     nuevoTutor: async (_, { input }, ctx) => {
         ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
         const { email, password, ndoc } = input
         //Revisar si el tutor ya está registrado
         const existeTutorEmail = await Tutor.findOne({ email })
@@ -113,6 +156,8 @@ const controller = {
     },
     actualizarTutor: async (_, { id, input }, ctx) => {
         ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
         const { email, password, ndoc } = input
         //verificar si ese tutor existe
         let tutor = await Tutor.findById(id)
@@ -176,13 +221,17 @@ const controller = {
             throw new Error('El password es incorrecto')
         }
         existeTutor.tipo = 'tutor'
-        //Crear el token
+        let { id, nombre, apellido, tipo } = existeTutor
+        const usuario = { id, email: existeTutor.email, nombre, apellido, tipo }
         return {
-            token: CrearToken(existeTutor, process.env.PALABRA_SECRETA_TOKEN, '24h')
+            token: CrearToken(existeTutor, process.env.PALABRA_SECRETA_TOKEN, '24h'),
+            usuario
         }
     },
     nuevoProfesor: async (_, { input }, ctx) => {
         ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
         const { email, password, ndoc } = input
         //Revisar si el Profesor ya está registrado
         const existeProfesorEmail = await Profesor.findOne({ email })
@@ -196,21 +245,19 @@ const controller = {
 
         const salt = await bcryptjs.genSalt(10)
         input.password = await bcryptjs.hash(password, salt)
-        try {
-            //Guardarlo en la BD
-            const profesor = new Profesor(input)
-            await profesor.save()
-            return profesor
-        } catch (e) {
-            console.log(e)
-        }
+        //Guardarlo en la BD
+        const profesor = new Profesor(input)
+        await profesor.save()
+        return profesor
     },
     actualizarProfesor: async (_, { id, input }, ctx) => {
         ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
         const { email, password, ndoc } = input
         //verificar si ese profesor existe
-        let profesor = await Profesor.findById(id)
-        if (!profesor) throw new Error('El profesor no existe')
+        let profesorExiste = await Profesor.findById(id)
+        if (!profesorExiste) throw new Error('El profesor no existe')
         //verificando si se repite el ndoc o email con otro profesor
         if (ndoc) {
             const verifndoc = await Profesor.findOne({ ndoc })
@@ -226,14 +273,50 @@ const controller = {
             input.password = await bcryptjs.hash(password, salt)
         }
         //Guardando en la DB
-        profesor = await Profesor.findOneAndUpdate({ _id: id }, input, { new: true })
+        const profesor = await Profesor.findOneAndUpdate({ _id: id }, input, { new: true })
+        //Obteniendo cursos del profesor
+        const cursos = await Curso.find({
+            profesores: {
+                $in: [profesorExiste]
+            }
+        })
+        //Actualizando cursos del profesor
+        for await (curso of cursos) {
+            let { profesores, _id } = curso
+            let NewProfes = []
+            profesores.map(e => {
+                if (e._id.toString() === profesor._id.toString()) NewProfes = [...NewProfes, profesor]
+                else NewProfes = [...NewProfes, e]
+            })
+            curso.profesores = NewProfes
+            //Guardando en la DB
+            //await Curso.updateOne({ _id }, curso)
+            const newCursos = await Curso.findOneAndUpdate({ _id }, curso)
+
+            //Actualizando profesores de módulo correspondientes al curso
+            await Modulo.updateMany({ "curso._id": newCursos._id }, {
+                $set: {
+                    "curso.profesores": NewProfes
+                }
+            })
+        }
         return profesor
     },
     eliminarProfesor: async (_, { id }, ctx) => {
         ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
         //Verificar que exista el producto
         let profesor = await Profesor.findById(id)
         if (!profesor) throw new Error('Profesor no encontrado')
+        //obtiniendo cursos del profesor
+        const cursos = await Curso.find({
+            profesores: {
+                $in: [profesor]
+            }
+        })
+        console.log(cursos)
+        if (cursos.length > 0) throw new Error('No se permite eliminar profesor inscrito en un curso')
         //Guardando en la DB
         await Profesor.findOneAndRemove({ _id: id })
         return "Profesor eliminado"
@@ -414,6 +497,8 @@ const controller = {
     },
     nuevoCurso: async (_, { input }, ctx) => {
         ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin') throw new Error('No tienes las credenciales')
         const { nombre, nivel } = input
         //Revisar si el nombre de curso ya está registrado
         const existeNombreCurso = await Curso.findOne({ nombre })
@@ -431,18 +516,15 @@ const controller = {
         //Agregando nivel y profesores al input
         input.profesores = profesores
         input.nivel = existeNivel
-        try {
-            //Guardarlo en la BD
-            const curso = new Curso(input)
-            await curso.save()
-            return curso
-        } catch (e) {
-            console.log(e)
-            throw new Error('Error del servidor')
-        }
+        //Guardarlo en la BD
+        const curso = new Curso(input)
+        await curso.save()
+        return curso
     },
     actualizarCurso: async (_, { id, input }, ctx) => {
         ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'admin' && tipo !== 'profesor') throw new Error('No tienes las credenciales')
         const { nivel, nombre } = input
         //Verificar si el curso existe 
         const cursoExiste = await Curso.findById(id)
@@ -480,6 +562,10 @@ const controller = {
             modulo.curso = curso
             await Modulo.updateOne({ _id: modulo._id }, modulo)
         }
+        //Elimnando _id y reemplazando por id en curso.profesores
+        const editProf = curso.profesores.map(({ _id, ...profs }) => { return { ...profs, id: _id } })
+        curso.profesores = editProf
+        
         return curso
     },
     eliminarCurso: async (_, { id }, ctx) => {
@@ -488,7 +574,7 @@ const controller = {
         const cursoExiste = await Curso.findById(id)
         if (!cursoExiste) throw new Error('El curso no existe')
         //verificando si el Curso no tiene contenido (Módulos)
-        const modulos = await Modulo.find({ "curso._id": id })
+        const modulos = await Modulo.find({ "curso._id": ObjectId(id) })
         if (modulos.length > 0) throw new Error('Solo se permite elimimar cursos sin contenido')
         //Guardando cambios en la DB
         await Curso.deleteOne({ _id: id })
@@ -622,16 +708,16 @@ const controller = {
         })
         console.log('tareasEliminadas:', tareasEliminadas.length)
         //eliminando los objectos corresondiente a los recursos y tareas eliminados (no es necesario que sea asíncrono, ya que la respuesta no es de utilidad)
-         for /* await */({link} of recursosEliminados){
+        for /* await */({ link } of recursosEliminados) {
            /* const res = await  */DeleteObjectS3(link)
-           //console.log('res recursosEliminados:',res)
+            //console.log('res recursosEliminados:',res)
         }
-        for /* await */({link} of tareasEliminadas){
+        for /* await */({ link } of tareasEliminadas) {
             /* const res = await  */DeleteObjectS3(link)
-           //console.log('res tareasEliminados:',res)
+            //console.log('res tareasEliminados:',res)
         }
         //igualmente con imagen, si se ha modficado eliminar el ya existente de s3
-        if(input.imagen){
+        if (input.imagen) {
             DeleteObjectS3(leccion.imagen)
         }
 
@@ -680,10 +766,10 @@ const controller = {
         let leccion = await Leccion.findById(id)
         if (!leccion) throw new Error('La lección no existe')
         //Eliminando los archivos de la lección síncronamente
-        for ({link} of leccion.recursos){
+        for ({ link } of leccion.recursos) {
             DeleteObjectS3(link)
         }
-        for ({link} of leccion.tareas){
+        for ({ link } of leccion.tareas) {
             DeleteObjectS3(link)
         }
         DeleteObjectS3(leccion.imagen)
@@ -771,6 +857,49 @@ const controller = {
             await Modulo.updateOne({ _id: modulo._id }, modulo)
         }
         return curso
+    },
+    nuevoAdmin: async (_, { input }, ctx) => {
+        ValidarToken(ctx)
+        const { usuario: { tipo } } = ctx
+        if (tipo !== 'superadmin') throw new Error('No tienes las credenciales')
+        const { email, password, ndoc } = input
+        //Revisar si el admin ya está registrado
+        const existeAdminEmail = await Admin.findOne({ email })
+        //console.log(existeAdminEmail)
+        if (existeAdminEmail) {
+            throw new Error('El email ya está registrado')
+        }
+        const existeAdminndoc = await Admin.findOne({ ndoc })
+        if (existeAdminndoc) {
+            throw new Error('El ndoc ya está registrado')
+        }
+        const salt = await bcryptjs.genSalt(10)
+        input.password = await bcryptjs.hash(password, salt)
+        //Guardarlo en la BD
+        const admin = new Admin(input)
+        await admin.save()
+        return admin
+    },
+    autenticarAdmin: async (_, { input }) => {
+        const { email, password } = input
+        //Si el Admin existe
+        let existeAdmin = await Admin.findOne({ email })
+        if (!existeAdmin) {
+            throw new Error('No existe admin con ese email')
+        }
+        //Revisar si el password es correcto
+        const passwordCorrecto = await bcryptjs.compare(password, existeAdmin.password)
+        if (!passwordCorrecto) {
+            throw new Error('El password es incorrecto')
+        }
+        existeAdmin.tipo = 'admin'
+        let { id, nombre, apellido, tipo } = existeAdmin
+        const usuario = { id, email: existeAdmin.email, nombre, apellido, tipo }
+        const Token = {
+            token: CrearToken(existeAdmin, process.env.PALABRA_SECRETA_TOKEN, '4h'),
+            usuario
+        }
+        return Token
     }
 }
 

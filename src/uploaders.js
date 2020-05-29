@@ -45,10 +45,12 @@ const fsAvatarUploader = new FilesystemUploader({ // (A)
 
 
 const DeleteObjectS3 = async (Key) => {
-  const pathName = Key.split('.com/')
+  const pathName = Key.split('.com/')//solo si el dominio termina en .com
+  //console.log('url:',pathName[1])
+  //console.log('KEY:',decodeURI(pathName[1]))//convertir el url codificado (%20,%C3,etc..) a su nombre de archivo (decodificado)
   const params = {
     Bucket: config.s3.params.Bucket,
-    Key: pathName[1]
+    Key: decodeURI(pathName[1])
 }
 try{
   await s3.deleteObject(params).promise()
